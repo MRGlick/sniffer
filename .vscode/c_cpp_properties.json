@@ -1,0 +1,26 @@
+{
+  "configurations": [
+    {
+      "name": "windows-gcc-x86",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "libs",
+        "Include",
+        "Include/pcap"
+      ],
+      "compilerPath": "C:/MinGW/bin/gcc.exe",
+      "cStandard": "${default}",
+      "cppStandard": "${default}",
+      "intelliSenseMode": "windows-gcc-x86",
+      "compilerArgs": [
+        "-LLib",
+        "-lPacket",
+        "-lwpcap",
+        "-lws2_32",
+        "-IInclude",
+        "-IInclude/pcap"
+      ]
+    }
+  ],
+  "version": 4
+}
