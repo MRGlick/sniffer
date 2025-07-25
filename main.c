@@ -38,7 +38,7 @@ typedef enum DatalinkType {
 
 #define PACKED __attribute__((packed))
 
-typedef struct PACKED MacAddr {
+typedef struct MacAddr {
     u_char data[6];
 } MacAddr;
 
@@ -50,11 +50,11 @@ typedef struct PACKED MacAddr {
 
 typedef uint16_t EtherType;
 
-typedef struct PACKED EthPacket {
+typedef struct EthPacket {
     MacAddr dst_addr;
     MacAddr src_addr;
     EtherType eth_type;
-    u_char data[];
+    const u_char *data;
 } EthPacket;
 
 const char *get_dl_name(DatalinkType t) {
@@ -84,19 +84,29 @@ void print_mac_addr(MacAddr addr) {
     printf("\n");
 }
 
-void analyze_and_print_packet(const struct pcap_pkthdr *packet_header, const u_char *bytes, const Userdata *data) {
-    printf("PACKET: \n\tlen: %d", packet_header->len);
+EthPacket parse_eth_packet(const u_char *bytes) {
+    EthPacket p = {.data = bytes + 14};
+    memcpy(p.dst_addr.data, bytes, 6);
+    memcpy(p.src_addr.data, bytes + 6, 6);
+    memcpy(&p.eth_type, bytes + 12, 2);
+    p.eth_type = ntohs(p.eth_type);
+
+    return p;
+}
+
+void analyze_and_print_packet(const struct pcap_pkthdr *packet_header,  const u_char *bytes, const Userdata *data) {
+    printf("PACKET: \n\tlen: %d \n", packet_header->len);
 
     DatalinkType link_type = data->link_type;
 
     switch (link_type) {
         case DL_ETHERNET:;
-            EthPacket *p = (EthPacket *)bytes;
+            EthPacket p = parse_eth_packet(bytes);
             printf("\tdst MAC address: ");
-            print_mac_addr(p->dst_addr);
+            print_mac_addr(p.dst_addr);
             printf("\tsrc MAC address: ");
-            print_mac_addr(p->src_addr);
-            printf("eth type: %s \n", get_eth_type_name(p->eth_type));
+            print_mac_addr(p.src_addr);
+            printf("eth type: %s (id: %d) \n", get_eth_type_name(p.eth_type), p.eth_type);
             
         break;
         
@@ -109,6 +119,9 @@ void analyze_and_print_packet(const struct pcap_pkthdr *packet_header, const u_c
 }
 
 void on_packet_received(u_char *user_data, const struct pcap_pkthdr *packet_header, const u_char *bytes) {
+    
+    printf("Received packet! \n");
+    
     assert(user_data);
     Userdata *data = (Userdata *)user_data;
 
@@ -144,15 +157,9 @@ typedef enum DeviceType {
 
 #define DEVICE_ETH 1
 #define DEVICE_WIFI 2
-int get_device_name(char *buf, DeviceType type) {
-
-    assert(type < DEV_END && type >= 0);
-
-    bool found = false;
+void get_device_name(char *buf) {
 
     char err[PCAP_ERRBUF_SIZE] = {0};
-
-    const char *keyword = NULL;
 
     pcap_if_t *interface_list;
 
@@ -161,37 +168,34 @@ int get_device_name(char *buf, DeviceType type) {
         err
     );
 
+    
+    int i = 0;
     for (pcap_if_t *node = interface_list; node; node = node->next) {
+        printf("%d: %s \n", i, node->description);
+        i++;
+    }
+    
+    printf("Select a device by index (0-%d): ", i - 1);
+    int idx;
+    scanf("%d", &idx);
 
-        // avert your eyes
-        keyword = type == DEV_ETH
-                            ? "Ethernet"
-                            : (type == DEV_WIFI
-                              ? "Wi-Fi"
-                              : "idk wtf" );
+    assert(idx < i && idx >= 0);
 
-        if (strstr(node->description, keyword)) {
+    for (pcap_if_t *node = interface_list; node; node = node->next) {
+        if (idx == 0) {
             strcpy(buf, node->name);
-            found = true;
-            goto cleanup;
+            return;
         }
+        idx--;
     }
 
-    
-
-cleanup:
-    pcap_freealldevs(interface_list);
-
-    return found? 0 : PCAP_ERROR;
 }
 
 int main() {
 
     char ethernet_dev_name[ETH_DEV_NAME_BUF_SIZE] = {0};
 
-    if (get_device_name(ethernet_dev_name, DEV_WIFI) == PCAP_ERROR) err_exit(
-        "Couldn't find an ethernet device!"
-    );
+    get_device_name(ethernet_dev_name);
 
     char err_buf[PCAP_ERRBUF_SIZE] = {0};
 
@@ -207,6 +211,7 @@ int main() {
         .link_type = link_type
     };
 
+    printf("Sniffing... \n");
     pcap_loop(
         handle,
         -1,
